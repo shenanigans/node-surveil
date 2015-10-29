@@ -164,8 +164,10 @@ Spy.prototype.update = function(){
         for (var i=0,j=dropped.length; i<j; i++) {
             var fname = dropped[i];
             self.emit ('remove', fname);
-            if (Object.hasOwnProperty.call (self.timeouts, fname))
+            if (Object.hasOwnProperty.call (self.timeouts, fname)) {
+                clearTimeout (self.timeouts[fname][0]);
                 delete self.timeouts[fname];
+            }
         }
 
 
