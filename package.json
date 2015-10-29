@@ -1,6 +1,6 @@
 {
   "name": "surveil",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "MIT",
   "description": "Really simple cross-platform directory and file watcher.",
   "author": "Kevin \"Schmidty\" Smith <shenanigans@kaztl.com>",
