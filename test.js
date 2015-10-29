@@ -433,12 +433,118 @@ describe ('existing directory', function(){
 
     });
 
+    it ('honors a list of extension filters', function (callback) {
+
+        fs.writeFileSync ('test/foo.txt', 'double triple quadruple quintuple sextuple septuple octuple');
+        fs.writeFileSync ('test/foo.bar', 'double triple quadruple quintuple sextuple septuple octuple');
+        fs.writeFileSync ('test/foo.baz', 'double triple quadruple quintuple sextuple septuple octuple');
+
+        try {
+            var test = surveil ('test', { extensions:[ '.bar', '.baz' ] });
+        } catch (err) {
+            return callback (err);
+        }
+        var yip = new yepnope (function (err) {
+            try {
+                test.close();
+            } catch (closeErr) {
+                return callback (err || closeErr);
+            }
+            if (err)
+                return callback (err);
+            callback()
+        });
+
+        var changedBar = false;
+        var changedBaz = false;
+        test.on ('change', function (fname) {
+            if (fname == 'foo.txt')
+                return yip.nope (new Error ('should not be watching foo.txt'));
+            if (fname == 'foo.bar')
+                changedBar = true;
+            else if (fname == 'foo.baz')
+                changedBaz = true;
+            if (changedBar && changedBaz)
+                yip.yep();
+        });
+        test.on ('add', function (fname) { yip.nope (new Error (
+            'unwanted event add: '+fname
+        )); });
+        test.on ('remove', function (fname) { yip.nope (new Error (
+            'unwanted event remove: '+fname
+        )); });
+
+        test.on ('ready', function (err) {
+            if (err)
+                return yip.nope (err);
+            fs.writeFileSync ('test/foo.bar', 'the quick brown fox jumped over LEROOOOOY JEEEEENKIIIIINS');
+            fs.writeFileSync ('test/foo.baz', 'the quick brown fox jumped over LEROOOOOY JEEEEENKIIIIINS');
+        });
+
+    });
+
+    it ('honors a list of regex filters', function (callback) {
+
+        fs.writeFileSync ('test/abc', 'double triple quadruple quintuple sextuple septuple octuple');
+        fs.writeFileSync ('test/bac', 'double triple quadruple quintuple sextuple septuple octuple');
+        fs.writeFileSync ('test/cab', 'double triple quadruple quintuple sextuple septuple octuple');
+        fs.writeFileSync ('test/cdb', 'double triple quadruple quintuple sextuple septuple octuple');
+
+        try {
+            var test = surveil ('test', { patterns:[ /ab/, /cd/ ] });
+        } catch (err) {
+            return callback (err);
+        }
+        var yip = new yepnope (function (err) {
+            try {
+                test.close();
+            } catch (closeErr) {
+                return callback (err || closeErr);
+            }
+            if (err)
+                return callback (err);
+            callback()
+        });
+
+        var changedABC = false;
+        var changedCAB = false;
+        var changedCDB = false;
+        test.on ('change', function (fname) {
+            if (fname == 'bac')
+                return yip.nope (new Error ('should not be watching bac'));
+            if (fname == 'abc')
+                changedABC = true;
+            else if (fname == 'cab')
+                changedCAB = true;
+            else if (fname == 'cdb')
+                changedCDB = true;
+            if (changedABC && changedCAB && changedCDB)
+                yip.yep();
+        });
+        test.on ('add', function (fname) { yip.nope (new Error (
+            'unwanted event add: '+fname
+        )); });
+        test.on ('remove', function (fname) { yip.nope (new Error (
+            'unwanted event remove: '+fname
+        )); });
+
+        test.on ('ready', function (err) {
+            if (err)
+                return yip.nope (err);
+            fs.writeFileSync ('test/abc', 'the quick brown fox jumped over LEROOOOOY JEEEEENKIIIIINS');
+            fs.writeFileSync ('test/cab', 'the quick brown fox jumped over LEROOOOOY JEEEEENKIIIIINS');
+            fs.writeFileSync ('test/cdb', 'the quick brown fox jumped over LEROOOOOY JEEEEENKIIIIINS');
+        });
+
+    });
+
 });
 
 describe ('existing file', function(){
 
     it ('watches and emits "ready" event', function (callback) {
 
+        fs.readdirSync ('test').forEach (function (fname) { fs.unlinkSync ('test/'+fname); });
         fs.writeFileSync ('test.txt', 'double triple quadruple quintuple sextuple septuple octuple');
 
         try {

@@ -141,6 +141,26 @@ Spy.prototype.update = function(){
             return;
         }
 
+        // filter filenames
+        if (self.options.extensions) {
+            fnames.filter (function (item) {
+                for (var i=0,j=self.options.extensions.length; i<j; i++) {
+                    var ext = self.options.extensions[i];
+                    if (item.slice (-1 * ext.length) === ext) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+        } else if (self.options.patterns) {
+            fnames.filter (function (item) {
+                for (var i=0,j=self.options.patterns.length; i<j; i++)
+                    if (self.options.patterns[i].test (item))
+                        return true;
+                return false;
+            });
+        }
+
         self.isFile = false;
         var added, dropped;
         var childMap = {};
@@ -184,74 +204,87 @@ Spy.prototype.update = function(){
             return;
         }
 
-        if (self.ready)
-            added.forEach (function (fname) {
-                function emitAddEvent(){
-                    self.emit ('add', fname);
-                    delete self.timeouts[fname];
-                }
-                self.timeouts[fname] = [
-                    setTimeout (emitAddEvent, self.options.changeTimeout),
-                    emitAddEvent
-                ];
-            });
         var fileI = 0, fileJ=added.length;
         var epermRetries = self.options.epermRetries;
         ( function watchNextNewFile(){
             if (self.closed)
                 return;
             var fname = added[fileI];
+            var fullpath = path.join (self.dir, fname);
 
-            try {
-                self.watches[fname] = fs.watch (path.join (self.dir, fname), function (event, eventFname) {
-                    if (event == 'rename') {
-                        self.update();
-                        return;
-                    }
+            fs.stat (fullpath, function (err, stats) {
+                if (err) {
+                    if (err.code == 'EPERM') {
+                        // eperm retry time...
+                        if (epermRetries--)
+                            return setTimeout (watchNextNewFile, self.options.epermEasing);
 
-                    if (Object.hasOwnProperty.call (self.timeouts, fname)) {
-                        var oldJob = self.timeouts[fname];
-                        clearTimeout (oldJob[0]);
-                        oldJob[0] = setTimeout (oldJob[1], self.options.changeTimeout);
-                        return;
+                        // eperm retries failed
+                        self.isUpdating = false;
+                        return self.update();
                     }
-                    function emitChangeEvent(){
-                        self.emit ('change', fname);
-                        delete self.timeouts[fname];
-                    }
-                    self.timeouts[fname] = [
-                        setTimeout (emitChangeEvent, self.options.changeTimeout),
-                        emitChangeEvent
-                    ];
-                });
-            } catch (err) {
-                if (err.code == 'EPERM') {
-                    // eperm retry time...
-                    if (epermRetries--)
-                        return setTimeout (watchNextNewFile, self.options.epermEasing);
-
-                    // eperm retries failed
-                    self.isUpdating = false;
-                    return self.update();
+                    console.log (err);
                 }
-            }
+                if (stats && !stats.isDirectory()) try {
+                    if (self.ready) {
+                        function emitAddEvent(){
+                            self.emit ('add', fname);
+                            delete self.timeouts[fname];
+                        }
+                        self.timeouts[fname] = [
+                            setTimeout (emitAddEvent, self.options.changeTimeout),
+                            emitAddEvent
+                        ];
+                    }
+                    self.watches[fname] = fs.watch (fullpath, function (event, eventFname) {
+                        if (event == 'rename') {
+                            self.update();
+                            return;
+                        }
 
-            if (fileI<fileJ) {
-                fileI++;
-                epermRetries = self.options.epermRetries;
-                setImmediate (watchNextNewFile);
-                return;
-            }
+                        if (Object.hasOwnProperty.call (self.timeouts, fname)) {
+                            var oldJob = self.timeouts[fname];
+                            clearTimeout (oldJob[0]);
+                            oldJob[0] = setTimeout (oldJob[1], self.options.changeTimeout);
+                            return;
+                        }
+                        function emitChangeEvent(){
+                            self.emit ('change', fname);
+                            delete self.timeouts[fname];
+                        }
+                        self.timeouts[fname] = [
+                            setTimeout (emitChangeEvent, self.options.changeTimeout),
+                            emitChangeEvent
+                        ];
+                    });
+                } catch (err) {
+                    if (err.code == 'EPERM') {
+                        // eperm retry time...
+                        if (epermRetries--)
+                            return setTimeout (watchNextNewFile, self.options.epermEasing);
 
-            self.isUpdating = false;
-            if (!self.ready) {
-                self.ready = true;
-                self.emit ('ready');
-            }
-            if (self.doUpdateAgain) {
-                self.doUpdateAgain = false;
-                self.update();
-            }
+                        // eperm retries failed
+                        self.isUpdating = false;
+                        return self.update();
+                    }
+                }
+
+                if (++fileI<fileJ) {
+                    epermRetries = self.options.epermRetries;
+                    setImmediate (watchNextNewFile);
+                    return;
+                }
+
+                self.isUpdating = false;
+                if (!self.ready) {
+                    self.ready = true;
+                    self.emit ('ready');
+                }
+                if (self.doUpdateAgain) {
+                    self.doUpdateAgain = false;
+                    self.update();
+                }
+            });
         } )();
     });
 };
