@@ -2,6 +2,7 @@
 var EventEmitter = require ('events').EventEmitter;
 var path = require ('path');
 var fs = require ('graceful-fs');
+var util = require ('util');
 
 /**     @module/Function surveil
 
@@ -48,7 +49,7 @@ function Spy (dir, options) {
 
     this.update();
 }
-Spy.prototype = new EventEmitter();
+util.inherits (Spy, EventEmitter);
 
 Spy.prototype.update = function(){
     // only one concurrent call to update need exist
@@ -60,9 +61,11 @@ Spy.prototype.update = function(){
 
     if (!this.mainWatcher) try {
         this.mainWatcher = fs.watch (this.dir, function (event, filename) {
-            if (event == 'rename' || !Object.hasOwnProperty.call (self.children, filename))
+            if (event == 'rename' || (filename && !Object.hasOwnProperty.call (self.children, filename)))
                 self.update();
             if (!self.isFile)
+                return;
+            if (event == 'rename')
                 return;
             // when the main target is a file, emit change events as a file
             if (Object.hasOwnProperty.call (self.timeouts, '')) {
@@ -86,6 +89,10 @@ Spy.prototype.update = function(){
         if (err.code != 'ENOENT')
             throw err;
         // path doesn't exist right now - wait for it.
+        if (Object.hasOwnProperty.call (self.timeouts, '')) {
+            clearTimeout (self.timeouts[''][0]);
+            delete self.timeouts[''];
+        }
         this.setupParentWatcher();
         if (!this.ready) {
             this.ready = true;
@@ -104,6 +111,12 @@ Spy.prototype.update = function(){
             self.isUpdating = false;
             if (err.code == 'ENOENT') {
                 self.exists = false;
+                if (self.mainWatcher)
+                    self.mainWatcher.close();
+                if (Object.hasOwnProperty.call (self.timeouts, '')) {
+                    clearTimeout (self.timeouts[''][0]);
+                    delete self.timeouts[''];
+                }
             } else if (err.code == 'ENOTDIR') {
                 // not a directory
                 self.isFile = true;
@@ -151,12 +164,8 @@ Spy.prototype.update = function(){
         for (var i=0,j=dropped.length; i<j; i++) {
             var fname = dropped[i];
             self.emit ('remove', fname);
-            if (Object.hasOwnProperty.call (self.timeouts, fname)) {
-                var oldJob = self.timeouts[fname];
-                clearTimeout (oldJob[0]);
-                setImmediate (oldJob[1]);
+            if (Object.hasOwnProperty.call (self.timeouts, fname))
                 delete self.timeouts[fname];
-            }
         }
 
 
