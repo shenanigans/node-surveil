@@ -42,6 +42,7 @@ function Spy (dir, options) {
     this.watches = {};
     this.timeouts = {};
     this.children = {};
+    this.subdirs = {};
     this.renameCandidates = [];
     this.ready = false;
     this.exists = false;
@@ -141,9 +142,38 @@ Spy.prototype.update = function(){
             return;
         }
 
-        // filter filenames
+        self.isFile = false;
+        var added;
+        var dropped = [];
+        var dirsDropped = [];
+        var childMap = {};
+        for (var i=0,j=fnames.length; i<j; i++)
+            childMap[fnames[i]] = true;
+        if (!self.ready)
+            added = fnames;
+        else {
+            added = [];
+            for (var key in childMap)
+                if (!Object.hasOwnProperty.call (self.children, key))
+                    added.push (key);
+            for (var key in self.children)
+                if (!Object.hasOwnProperty.call (childMap, key))
+                    dropped.push (key);
+            for (var key in self.subdirs)
+                if (!Object.hasOwnProperty.call (childMap, key))
+                    dirsDropped.push (key);
+        }
+        self.children = childMap;
+
+        for (var i=0,j=dirsDropped.length; i<j; i++) {
+            var dirname = dirsDropped[i];
+            self.emit ('removeDir', dirname);
+            delete self.subdirs[dirname];
+        }
+
+        // filter dropped filenames
         if (self.options.extensions) {
-            fnames.filter (function (item) {
+            dropped = dropped.filter (function (item) {
                 for (var i=0,j=self.options.extensions.length; i<j; i++) {
                     var ext = self.options.extensions[i];
                     if (item.slice (-1 * ext.length) === ext) {
@@ -153,33 +183,13 @@ Spy.prototype.update = function(){
                 return false;
             });
         } else if (self.options.patterns) {
-            fnames.filter (function (item) {
+            dropped = dropped.filter (function (item) {
                 for (var i=0,j=self.options.patterns.length; i<j; i++)
                     if (self.options.patterns[i].test (item))
                         return true;
                 return false;
             });
         }
-
-        self.isFile = false;
-        var added, dropped;
-        var childMap = {};
-        for (var i=0,j=fnames.length; i<j; i++)
-            childMap[fnames[i]] = true;
-        if (!self.ready) {
-            added = fnames;
-            dropped = [];
-        } else {
-            added = [];
-            dropped = [];
-            for (var key in childMap)
-                if (!Object.hasOwnProperty.call (self.children, key))
-                    added.push (key);
-            for (var key in self.children)
-                if (!Object.hasOwnProperty.call (childMap, key))
-                    dropped.push (key);
-        }
-        self.children = childMap;
 
         for (var i=0,j=dropped.length; i<j; i++) {
             var fname = dropped[i];
@@ -189,7 +199,6 @@ Spy.prototype.update = function(){
                 delete self.timeouts[fname];
             }
         }
-
 
         if (!added.length) {
             if (!self.ready) {
@@ -225,38 +234,65 @@ Spy.prototype.update = function(){
                     }
                     console.log (err);
                 }
-                if (stats && !stats.isDirectory()) try {
-                    if (self.ready) {
-                        function emitAddEvent(){
-                            self.emit ('add', fname);
-                            delete self.timeouts[fname];
+                if (stats && stats.isDirectory()) {
+                    if (self.ready)
+                        self.emit ('addDir', fname, stats);
+                    else
+                        self.emit ('childDir', fname, stats);
+                    self.subdirs[fname] = true;
+                } else if (stats) try {
+                    var skip = true;
+                    if (self.options.extensions) {
+                        for (var i=0,j=self.options.extensions.length; i<j; i++) {
+                            var ext = self.options.extensions[i];
+                            if (fname.slice (-1 * ext.length) === ext) {
+                                skip = false;
+                                break;
+                            }
                         }
-                        self.timeouts[fname] = [
-                            setTimeout (emitAddEvent, self.options.changeTimeout),
-                            emitAddEvent
-                        ];
-                    }
-                    self.watches[fname] = fs.watch (fullpath, function (event, eventFname) {
-                        if (event == 'rename') {
-                            self.update();
-                            return;
-                        }
+                    } else if (self.options.patterns) {
+                        for (var i=0,j=self.options.patterns.length; i<j; i++)
+                            if (self.options.patterns[i].test (fname)) {
+                                skip = false;
+                                break;
+                            }
+                    } else
+                        skip = false;
 
-                        if (Object.hasOwnProperty.call (self.timeouts, fname)) {
-                            var oldJob = self.timeouts[fname];
-                            clearTimeout (oldJob[0]);
-                            oldJob[0] = setTimeout (oldJob[1], self.options.changeTimeout);
-                            return;
-                        }
-                        function emitChangeEvent(){
-                            self.emit ('change', fname);
-                            delete self.timeouts[fname];
-                        }
-                        self.timeouts[fname] = [
-                            setTimeout (emitChangeEvent, self.options.changeTimeout),
-                            emitChangeEvent
-                        ];
-                    });
+                    if (!skip) {
+                        if (self.ready) {
+                            function emitAddEvent(){
+                                self.emit ('add', fname, stats);
+                                delete self.timeouts[fname];
+                            }
+                            self.timeouts[fname] = [
+                                setTimeout (emitAddEvent, self.options.changeTimeout),
+                                emitAddEvent
+                            ];
+                        } else
+                            self.emit ('child', fname, stats);
+                        self.watches[fname] = fs.watch (fullpath, function (event, eventFname) {
+                            if (event == 'rename') {
+                                self.update();
+                                return;
+                            }
+
+                            if (Object.hasOwnProperty.call (self.timeouts, fname)) {
+                                var oldJob = self.timeouts[fname];
+                                clearTimeout (oldJob[0]);
+                                oldJob[0] = setTimeout (oldJob[1], self.options.changeTimeout);
+                                return;
+                            }
+                            function emitChangeEvent(){
+                                self.emit ('change', fname);
+                                delete self.timeouts[fname];
+                            }
+                            self.timeouts[fname] = [
+                                setTimeout (emitChangeEvent, self.options.changeTimeout),
+                                emitChangeEvent
+                            ];
+                        });
+                    }
                 } catch (err) {
                     if (err.code == 'EPERM') {
                         // eperm retry time...

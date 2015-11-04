@@ -34,6 +34,9 @@ fs.readdirSync ('test').forEach (function (fname) { fs.unlinkSync ('test/'+fname
 
 describe ('existing directory', function(){
 
+    this.timeout (2000);
+    this.slow (1000);
+
     it ('watches and emits "ready" event', function (callback) {
 
         try {
@@ -538,9 +541,290 @@ describe ('existing directory', function(){
 
     });
 
+    it ('emits the "child" event', function (callback) {
+
+        try {
+            var test = surveil ('test');
+        } catch (err) {
+            return callback (err);
+        }
+        var yip = new yepnope (function (err) {
+            try {
+                test.close();
+            } catch (closeErr) {
+                return callback (err || closeErr);
+            }
+            if (err)
+                return callback (err);
+            callback()
+        });
+
+        test.on ('add', function (fname) { yip.nope (new Error (
+            'unwanted event add: '+fname
+        )); });
+        test.on ('remove', function (fname) { yip.nope (new Error (
+            'unwanted event remove: '+fname
+        )); });
+        test.on ('change', function (fname) { yip.nope (new Error (
+            'unwanted event change: '+fname
+        )); });
+        var childrenEmitted = {
+            "foo.txt":      false,
+            "foo.bar":      false,
+            "foo.baz":      false,
+            "bar.txt":      false,
+            "baz.txt":      false,
+            abc:            false,
+            bac:            false,
+            cab:            false,
+            cdb:            false
+        };
+        var readyEmitted = false;
+        test.on ('child', function (fname, stats) {
+            if (!Object.hasOwnProperty.call (childrenEmitted, fname))
+                return yip.nope (new Error ('incorrect filename:', fname));
+            if (readyEmitted)
+                return yip.nope (new Error ('emitted "child" event after "ready" event'));
+            if (childrenEmitted[fname])
+                return yip.nope (new Error ('emitted "child" more than once for filename:', fname));
+            childrenEmitted[fname] = true;
+            try {
+                if (!stats || stats.isDirectory())
+                    return yip.nope (new Error ('failed to share stat results'));
+            } catch (err) {
+                return yip.nope (err);
+            }
+            for (var key in childrenEmitted)
+                if (!childrenEmitted[key])
+                    return;
+            yip.yep();
+        });
+        test.on ('ready', function (err) {
+            if (err)
+                return yip.nope (err);
+            readyEmitted = true;
+        });
+
+    });
+
+    it ('emits the "childDir" event', function (callback) {
+
+        fs.mkdirSync ('test/foodir');
+
+        try {
+            var test = surveil ('test');
+        } catch (err) {
+            return callback (err);
+        }
+        var yip = new yepnope (function (err) {
+            try {
+                test.close();
+                fs.rmdirSync ('test/foodir');
+            } catch (closeErr) {
+                return callback (err || closeErr);
+            }
+            if (err)
+                return callback (err);
+            callback()
+        });
+
+        test.on ('add', function (fname) { yip.nope (new Error (
+            'unwanted event add: '+fname
+        )); });
+        test.on ('remove', function (fname) { yip.nope (new Error (
+            'unwanted event remove: '+fname
+        )); });
+        test.on ('change', function (fname) { yip.nope (new Error (
+            'unwanted event change: '+fname
+        )); });
+        var readyEmitted = false;
+        var dirEmitted = false;
+        test.on ('childDir', function (dirname, stats) {
+            if (dirname != 'foodir')
+                return yip.nope (new Error ('incorrect dirname:', dirname));
+            if (readyEmitted)
+                return yip.nope (new Error ('emitted "child" event after "ready" event'));
+            if (dirEmitted)
+                return yip.nope (new Error ('emitted "childDir" more than once'));
+            dirEmitted = true;
+            try {
+                if (!stats || !stats.isDirectory())
+                    return yip.nope (new Error ('failed to share stat results'));
+            } catch (err) {
+                return yip.nope (err);
+            }
+            yip.yep();
+        });
+        test.on ('ready', function (err) {
+            if (err)
+                return yip.nope (err);
+            readyEmitted = true;
+        });
+
+    });
+
+    it ('ignores filename filters for the "childDir" event', function (callback) {
+
+        fs.mkdirSync ('test/foodir');
+
+        try {
+            var test = surveil ('test', { extensions:[ '.txt', '.xml' ] });
+        } catch (err) {
+            return callback (err);
+        }
+        var yip = new yepnope (function (err) {
+            try {
+                test.close();
+                fs.rmdirSync ('test/foodir');
+            } catch (closeErr) {
+                return callback (err || closeErr);
+            }
+            if (err)
+                return callback (err);
+            callback()
+        });
+
+        test.on ('add', function (fname) { yip.nope (new Error (
+            'unwanted event add: '+fname
+        )); });
+        test.on ('remove', function (fname) { yip.nope (new Error (
+            'unwanted event remove: '+fname
+        )); });
+        test.on ('change', function (fname) { yip.nope (new Error (
+            'unwanted event change: '+fname
+        )); });
+        var readyEmitted = false;
+        var dirEmitted = false;
+        test.on ('childDir', function (dirname, stats) {
+            if (dirname != 'foodir')
+                return yip.nope (new Error ('incorrect dirname:', dirname));
+            if (readyEmitted)
+                return yip.nope (new Error ('emitted "child" event after "ready" event'));
+            if (dirEmitted)
+                return yip.nope (new Error ('emitted "childDir" more than once'));
+            dirEmitted = true;
+            try {
+                if (!stats || !stats.isDirectory())
+                    return yip.nope (new Error ('failed to share stat results'));
+            } catch (err) {
+                return yip.nope (err);
+            }
+            yip.yep();
+        });
+        test.on ('ready', function (err) {
+            if (err)
+                return yip.nope (err);
+            readyEmitted = true;
+        });
+
+    });
+
+    it ('emits the "addDir" event', function (callback) {
+
+        try {
+            var test = surveil ('test', { extensions:[ '.txt', '.xml' ] });
+        } catch (err) {
+            return callback (err);
+        }
+        var yip = new yepnope (function (err) {
+            try {
+                test.close();
+                fs.rmdirSync ('test/foodir');
+            } catch (closeErr) {
+                return callback (err || closeErr);
+            }
+            if (err)
+                return callback (err);
+            callback()
+        });
+
+        test.on ('add', function (fname) { yip.nope (new Error (
+            'unwanted event add: '+fname
+        )); });
+        test.on ('remove', function (fname) { yip.nope (new Error (
+            'unwanted event remove: '+fname
+        )); });
+        test.on ('change', function (fname) { yip.nope (new Error (
+            'unwanted event change: '+fname
+        )); });
+        var dirEmitted = false;
+        test.on ('addDir', function (dirname, stats) {
+            if (dirname != 'foodir')
+                return yip.nope (new Error ('incorrect dirname:', dirname));
+            if (dirEmitted)
+                return yip.nope (new Error ('emitted "addDir" more than once'));
+            dirEmitted = true;
+            try {
+                if (!stats || !stats.isDirectory())
+                    return yip.nope (new Error ('failed to share stat results'));
+            } catch (err) {
+                return yip.nope (err);
+            }
+            yip.yep();
+        });
+        test.on ('ready', function (err) {
+            if (err)
+                return yip.nope (err);
+            fs.mkdirSync ('test/foodir');
+        });
+
+    });
+
+    it ('emits the "removeDir" event', function (callback) {
+
+        fs.mkdirSync ('test/foodir');
+
+        try {
+            var test = surveil ('test', { extensions:[ '.txt', '.xml' ] });
+        } catch (err) {
+            return callback (err);
+        }
+        var yip = new yepnope (function (err) {
+            try {
+                test.close();
+            } catch (closeErr) {
+                return callback (err || closeErr);
+            }
+            if (err)
+                return callback (err);
+            try {
+                fs.rmdirSync ('test/foodir');
+            } catch (err) { /* it should be missing */ }
+            callback()
+        });
+
+        test.on ('add', function (fname) { yip.nope (new Error (
+            'unwanted event add: '+fname
+        )); });
+        test.on ('remove', function (fname) { yip.nope (new Error (
+            'unwanted event remove: '+fname
+        )); });
+        test.on ('change', function (fname) { yip.nope (new Error (
+            'unwanted event change: '+fname
+        )); });
+        var dirEmitted = false;
+        test.on ('removeDir', function (dirname) {
+            if (dirname != 'foodir')
+                return yip.nope (new Error ('incorrect dirname:', dirname));
+            if (dirEmitted)
+                return yip.nope (new Error ('emitted "removeDir" more than once'));
+            dirEmitted = true;
+            yip.yep();
+        });
+        test.on ('ready', function (err) {
+            if (err)
+                return yip.nope (err);
+            fs.rmdirSync ('test/foodir');
+        });
+
+    });
+
 });
 
 describe ('existing file', function(){
+
+    this.timeout (2000);
+    this.slow (1000);
 
     it ('watches and emits "ready" event', function (callback) {
 
