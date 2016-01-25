@@ -48,11 +48,14 @@ function Spy (dir, options) {
     this.exists = false;
     this.isFile = false;
 
-    this.update();
+    var self = this;
+    process.nextTick (function(){
+        self.update();
+    });
 }
 util.inherits (Spy, EventEmitter);
 
-Spy.prototype.update = function(){
+Spy.prototype.update = function (retries) {
     // only one concurrent call to update need exist
     if (this.isUpdating) {
         this.doUpdateAgain = true;
@@ -60,9 +63,10 @@ Spy.prototype.update = function(){
     }
     this.isUpdating = true;
 
+    var self = this;
     if (!this.mainWatcher) try {
         this.mainWatcher = fs.watch (this.dir, function (event, filename) {
-            if (event == 'rename' || (filename && !Object.hasOwnProperty.call (self.children, filename)))
+            if (event == 'rename' || !filename || !Object.hasOwnProperty.call (self.children, filename))
                 self.update();
             if (!self.isFile)
                 return;
@@ -70,7 +74,7 @@ Spy.prototype.update = function(){
                 return;
             // when the main target is a file, emit change events as a file
             if (Object.hasOwnProperty.call (self.timeouts, '')) {
-                var oldJob = self.timeouts[self.dir];
+                var oldJob = self.timeouts[''];
                 clearTimeout (oldJob[0]);
                 oldJob[0] = setTimeout (oldJob[1], self.options.changeTimeout);
                 return;
@@ -84,20 +88,32 @@ Spy.prototype.update = function(){
                 emitChangeEvent
             ];
         });
+        if (this.ready && !this.exists)
+            this.emit ('add');
         this.exists = true;
     } catch (err) {
         this.isUpdating = false;
-        if (err.code != 'ENOENT')
-            throw err;
+        if (err.code != 'ENOENT') {
+            if (err.code != 'EPERM' || retries === 0)
+                throw err;
+            setTimeout (function(){
+                self.update ((retries || self.options.epermRetries) - 1);
+            }, this.options.epermEasing);
+            return;
+        }
         // path doesn't exist right now - wait for it.
-        if (Object.hasOwnProperty.call (self.timeouts, '')) {
-            clearTimeout (self.timeouts[''][0]);
-            delete self.timeouts[''];
+        if (Object.hasOwnProperty.call (this.timeouts, '')) {
+            clearTimeout (this.timeouts[''][0]);
+            delete this.timeouts[''];
         }
         this.setupParentWatcher();
         if (!this.ready) {
             this.ready = true;
             this.emit ('ready');
+        }
+        if (this.exists) {
+            this.emit ('remove');
+            this.exists = false;
         }
         if (this.doUpdateAgain) {
             this.doUpdateAgain = false;
@@ -106,21 +122,26 @@ Spy.prototype.update = function(){
         return;
     }
 
-    var self = this;
     fs.readdir (this.dir, function (err, fnames) {
         if (err) {
             self.isUpdating = false;
             if (err.code == 'ENOENT') {
                 self.exists = false;
-                if (self.mainWatcher)
+                if (self.mainWatcher) {
                     self.mainWatcher.close();
+                    delete self.mainWatcher;
+                }
                 if (Object.hasOwnProperty.call (self.timeouts, '')) {
                     clearTimeout (self.timeouts[''][0]);
                     delete self.timeouts[''];
                 }
+                self.emit ('remove');
+                self.setupParentWatcher();
             } else if (err.code == 'ENOTDIR') {
                 // not a directory
                 self.isFile = true;
+                if (!self.exists)
+                    self.emit ('add');
                 self.exists = true;
             } else {
                 // unknown error
@@ -143,6 +164,8 @@ Spy.prototype.update = function(){
         }
 
         self.isFile = false;
+        if (self.ready && !self.exists)
+            self.emit ('add');
         var added;
         var dropped = [];
         var dirsDropped = [];
@@ -232,7 +255,6 @@ Spy.prototype.update = function(){
                         self.isUpdating = false;
                         return self.update();
                     }
-                    console.log (err);
                 }
                 if (stats && stats.isDirectory()) {
                     if (self.ready)
@@ -271,7 +293,7 @@ Spy.prototype.update = function(){
                             ];
                         } else
                             self.emit ('child', fname, stats);
-                        self.watches[fname] = fs.watch (fullpath, function (event, eventFname) {
+                        var newWatcher = self.watches[fname] = fs.watch (fullpath, function (event, eventFname) {
                             if (event == 'rename') {
                                 self.update();
                                 return;

@@ -1,13 +1,26 @@
 surveil
 =======
 Watches a directory for new files and deletions, attempting to delay events until initial file
-creation is complete. Watches files in the directory for changes. Ignores subdirectories entirely.
-Also watches files. Doesn't care if the watched path doesn't exist yet or disappears/reappears.
+creation is complete. Watches files in the directory for changes. Separates events for child files
+and directories. Also watches single files and doesn't require an alternate API to do so. Behaves
+gracefully when the watched path does not exist yet, emitting `add` with no filename when it
+appears.
 
 Shares `stat` calls gathered during early setup so you don't have to duplicate any work `surveil` is
 already doing. This sort of efficiency trick can pay big dividends when querying against spinning
-rust. Provides basic events for subdirectory activity separately from the normal file events and
-does not apply the filename filters to them.
+rust.
+
+
+Why
+---
+I tried a bunch of existing libs and they all exhibited blocking issues when faced with directories
+containing lots of files. On source examination I found a lot of use of `fs.statSync` and other
+`Sync` calls. This quickly made me disatisfied with the state of the art in Node.js file watching
+at the time. Surveil is **much** more performant in adverse conditions. While most watcher libs are
+designed to support task runners and other applications that can take their time starting up,
+surveil **never** assumes the caller doesn't care how long something blocks. Finally, because
+surveil was designed on windows and later tested for *nix it boasts (I am boasting, aren't I?)
+superior cross-platform reliability.
 
 
 Installation
@@ -19,10 +32,11 @@ $ npm install surveil
 
 Running Tests
 -------------
-Coming soon - run tests against your custom timeout settings
 ```shell
 $ npm test
 ```
+
+Coming soon - run tests against your custom timeout settings.
 
 
 Usage
@@ -32,10 +46,8 @@ var path = require ('path');
 var surveil = require ('surveil');
 
 var subjectDir = surveil (
-  path.resolve (
-    "super/secret/files/"
-  // options argument is optional
-  {
+  "super/secret/files/",
+  { // options argument is optional - defaults shown
     /*
       `change` events closer together than
       this are grouped into one. Implies a
@@ -53,7 +65,7 @@ var subjectDir = surveil (
       Proper support for missing path
       features hasn't landed yet. For now a
       simple poll timeout is used to test
-      the surveild path. (in milliseconds)
+      the surveil'd path. (in milliseconds)
     */
     hack_missingPoll:       1000,
     /*

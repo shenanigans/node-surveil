@@ -30,7 +30,9 @@ try {
     if (err.code != 'EEXIST')
         throw err;
 }
-fs.readdirSync ('test').forEach (function (fname) { fs.unlinkSync ('test/'+fname); });
+fs.readdirSync ('test').forEach (function (fname) { try {
+    fs.unlinkSync ('test/'+fname);
+} catch (err) { /* nobody cares */ } });
 
 describe ('existing directory', function(){
 
@@ -42,6 +44,8 @@ describe ('existing directory', function(){
         try {
             var test = surveil ('test');
             test.on ('ready', function (err) {
+                if (err)
+                    return callback (err);
                 try {
                     test.close();
                 } catch (closeErr) {
@@ -135,12 +139,14 @@ describe ('existing directory', function(){
 
         fs.writeFileSync ('test/foo.txt', 'double triple quadruple quintuple sextuple septuple octuple');
 
+        var stream;
         try {
             var test = surveil ('test');
         } catch (err) {
             return callback (err);
         }
         var yip = new yepnope (function (err) {
+            stream.end();
             try {
                 test.close();
             } catch (closeErr) {
@@ -170,7 +176,7 @@ describe ('existing directory', function(){
         test.on ('ready', function (err) {
             if (err)
                 return yip.nope (err);
-            fs.createWriteStream ('test/foo.txt', function (err, stream) {
+            stream = fs.createWriteStream ('test/foo.txt', function (err, stream) {
                 if (err)
                     return yip.nope (err);
 
@@ -200,12 +206,14 @@ describe ('existing directory', function(){
 
     it ('does not emit "change" events during early file creation', function (callback) {
 
+        var stream;
         try {
             var test = surveil ('test');
         } catch (err) {
             return callback (err);
         }
         var yip = new yepnope (function (err) {
+            stream.end();
             try {
                 test.close();
             } catch (closeErr) {
@@ -235,7 +243,7 @@ describe ('existing directory', function(){
         test.on ('ready', function (err) {
             if (err)
                 return yip.nope (err);
-            fs.createWriteStream ('test/bar.txt', function (err, stream) {
+            stream = fs.createWriteStream ('test/bar.txt', function (err, stream) {
                 if (err)
                     return yip.nope (err);
 
@@ -263,14 +271,17 @@ describe ('existing directory', function(){
 
     });
 
-    it ('emits "change" events for a new file', function (callback) {
+    it ('emits "change" events correctly for a new file', function (callback) {
 
+        fs.unlinkSync ('test/foo.txt');
+        var stream;
         try {
             var test = surveil ('test');
         } catch (err) {
             return callback (err);
         }
         var yip = new yepnope (function (err) {
+            stream.end();
             try {
                 test.close();
             } catch (closeErr) {
@@ -281,26 +292,29 @@ describe ('existing directory', function(){
             callback()
         });
 
+        var added = false;
         var changed = false;
         test.on ('change', function (fname) {
             if (fname != 'foo.txt')
                 return yip.nope (new Error ('incorrect filename: '+fname));
             if (changed)
-                return yip.nope (new Error ('repeat event change: '+fname));
+                return yip.nope (new Error ('repeat event "change": '+fname));
+            if (!added)
+                return yip.nope (new Error ('unwanted early event "change": '+fname));
             changed = true;
             yip.yep();
         });
-        test.on ('add', function (fname) { yip.nope (new Error (
-            'unwanted event add: '+fname
-        )); });
-        test.on ('remove', function (fname) { yip.nope (new Error (
-            'unwanted event remove: '+fname
-        )); });
-
-        test.on ('ready', function (err) {
-            if (err)
-                return yip.nope (err);
-            fs.createWriteStream ('test/foo.txt', function (err, stream) {
+        test.on ('add', function (fname) {
+            if (added)
+                return yip.nope (new Error (
+                    'repeat event "add": '+fname
+                ));
+            if (changed)
+                return yip.nope (new Error (
+                    'unwanted event "add": '+fname
+                ));
+            added = true;
+            stream = fs.createWriteStream ('test/foo.txt', function (err, stream) {
                 if (err)
                     return yip.nope (err);
 
@@ -323,45 +337,9 @@ describe ('existing directory', function(){
                     setTimeout (writeToStream, 30);
                 }
 
-                fs.writeFileSync ('test/foo.txt', 'double triple quadruple quintuple sextuple septuple octuple');
                 setTimeout (writeToStream, 300);
             });
         });
-
-    });
-
-    it ('emits "change" events for a file that disappeared and reappeared', function (callback) {
-
-        fs.writeFileSync ('test/foo.txt', 'double triple quadruple quintuple sextuple septuple octuple');
-
-        try {
-            var test = surveil ('test');
-        } catch (err) {
-            return callback (err);
-        }
-        var yip = new yepnope (function (err) {
-            try {
-                test.close();
-            } catch (closeErr) {
-                return callback (err || closeErr);
-            }
-            if (err)
-                return callback (err);
-            callback()
-        });
-
-        var changed = false;
-        test.on ('change', function (fname) {
-            if (fname != 'foo.txt')
-                return yip.nope (new Error ('incorrect filename: '+fname));
-            if (changed)
-                return yip.nope (new Error ('repeat event change: '+fname));
-            changed = true;
-            yip.yep();
-        });
-        test.on ('add', function (fname) { yip.nope (new Error (
-            'unwanted event add: '+fname
-        )); });
         test.on ('remove', function (fname) { yip.nope (new Error (
             'unwanted event remove: '+fname
         )); });
@@ -369,18 +347,7 @@ describe ('existing directory', function(){
         test.on ('ready', function (err) {
             if (err)
                 return yip.nope (err);
-            fs.createWriteStream ('test/foo.txt', function (err, stream) {
-                if (err)
-                    return yip.nope (err);
-
-                fs.writeFileSync ('test/foo.txt', 'able baker charlie dog easy');
-                setTimeout (function(){
-                    fs.unlinkSync ('test/foo.txt');
-                    setTimeout (function(){
-                        fs.writeFileSync ('test/foo.txt', 'able baker charlie dog easy');
-                    }, 350);
-                }, 350);
-            });
+            fs.writeFileSync ('test/foo.txt', 'double triple quadruple quintuple sextuple septuple octuple');
         });
 
     });
@@ -839,6 +806,8 @@ describe ('existing file', function(){
                 } catch (closeErr) {
                     return callback (err || closeErr);
                 }
+                if (err)
+                    return callback (err);
                 callback();
             });
         } catch (err) {
@@ -849,12 +818,14 @@ describe ('existing file', function(){
 
     it ('emits one "change" event for a batch of chunk writes', function (callback) {
 
+        var writeStream;
         try {
             var test = surveil ('test.txt');
         } catch (err) {
             return callback (err);
         }
         var yip = new yepnope (function (err) {
+            writeStream.end();
             try {
                 test.close();
             } catch (closeErr) {
@@ -884,7 +855,7 @@ describe ('existing file', function(){
         test.on ('ready', function (err) {
             if (err)
                 return yip.nope (err);
-            fs.createWriteStream ('test.txt', function (err, stream) {
+            writeStream = fs.createWriteStream ('test.txt', function (err, stream) {
                 if (err)
                     return yip.nope (err);
 
@@ -912,14 +883,129 @@ describe ('existing file', function(){
 
     });
 
-    it ('does not emit "remove" when the watched file is being removed', function (callback) {
+    describe ('remove/add watched file', function(){
 
+        var test;
+        it ('emits "remove" when the watched file is being removed', function (callback) {
+
+            test = surveil ('test.txt', { hack_missingPoll:100 });
+            var yip = new yepnope (function (err) {
+                try {
+                    test.removeAllListeners();
+                } catch (listenErr) {
+                    try {
+                        test.close();
+                    } catch (closeErr) {
+                        return callback (err || closeErr);
+                    }
+                    return callback (listenErr);
+                }
+                if (err)
+                    return callback (err);
+                callback()
+            });
+
+            test.on ('change', function (fname) { yip.nope (new Error (
+                'unwanted event change: '+fname
+            )); });
+            test.on ('add', function (fname) { yip.nope (new Error (
+                'unwanted event add: '+fname
+            )); });
+            test.on ('remove', function (fname) {
+                yip.yep();
+            });
+
+            setTimeout (function(){
+                yip.nope (new Error ('did not fire "remove" event'));
+            }, 500);
+
+            test.on ('ready', function (err) {
+                if (err)
+                    return yip.nope (err);
+                try {
+                    fs.unlinkSync ('test.txt');
+                } catch (err) {
+                    yip.nope (err);
+                }
+            });
+
+        });
+
+        it ('emits "add" when the watched file reappears', function (callback) {
+
+            var yip = new yepnope (function (err) {
+                try {
+                    test.close();
+                } catch (closeErr) {
+                    return callback (err || closeErr);
+                }
+                if (err)
+                    return callback (err);
+                callback()
+            });
+
+            test.on ('change', function (fname) { yip.nope (new Error (
+                'unwanted event change: '+fname
+            )); });
+            test.on ('add', function (fname) {
+                yip.yep();
+            });
+            test.on ('remove', function (fname) { yip.nope (new Error (
+                'unwanted event remove: '+fname
+            )); });
+
+            try {
+                fs.writeFileSync ('test.txt', 'foo bar baz');
+            } catch (err) {
+                yip.nope (err);
+            }
+
+            setTimeout (function(){
+                yip.nope (new Error ('did not fire "add" event'));
+            }, 500);
+
+        });
+
+    });
+
+});
+
+describe ('missing directory', function(){
+
+    var test;
+    it ('does not emit "error" or pass an Error to "ready"', function (callback) {
+
+        fs.rmdirSync ('test');
+        var yip = new yepnope (function (err) {
+            try {
+                test.removeAllListeners();
+            } catch (closeErr) {
+                return callback (err || closeErr);
+            }
+            if (err)
+                return callback (err);
+            callback()
+        });
         try {
-            var test = surveil ('test.txt');
+            test = surveil ('test');
         } catch (err) {
             return callback (err);
         }
+        test.on ('ready', function (err) {
+            if (err)
+                return yip.nope (err);
+            yip.yep();
+        });
+        test.on ('error', function (err) {
+            yip.nope (err);
+        });
+
+    });
+
+    it ('emits "add" event when the directory appears', function (callback) {
+
         var yip = new yepnope (function (err) {
+            fs.rmdirSync ('test');
             try {
                 test.close();
             } catch (closeErr) {
@@ -933,106 +1019,89 @@ describe ('existing file', function(){
         test.on ('change', function (fname) { yip.nope (new Error (
             'unwanted event change: '+fname
         )); });
-        test.on ('add', function (fname) { yip.nope (new Error (
-            'unwanted event add: '+fname
-        )); });
         test.on ('remove', function (fname) { yip.nope (new Error (
             'unwanted event remove: '+fname
         )); });
-
-        setTimeout (function(){
+        var added = false;
+        test.on ('add', function (fname) {
+            if (fname !== undefined)
+                yip.nope (new Error ('incorrect filename: '+fname));
+            if (added)
+                yip.nope (new Error ('repeat "add" event'));
+            added = true;
             yip.yep();
-        }, 500);
-        fs.unlinkSync ('test.txt');
+        });
+
+        fs.mkdirSync ('test');
 
     });
 
 });
 
-// describe ('missing directory', function(){
+describe ('missing file', function(){
 
-//     it ('does not emit "error" or pass an Error to "ready"', function (callback) {
+    var test;
+    it ('does not emit "error" or pass an Error to "ready"', function (callback) {
 
-//     });
+        fs.unlinkSync ('test.txt');
+        var yip = new yepnope (function (err) {
+            try {
+                test.removeAllListeners();
+            } catch (closeErr) {
+                return callback (err || closeErr);
+            }
+            if (err)
+                return callback (err);
+            callback()
+        });
+        try {
+            test = surveil ('test.txt', { epermEasing:100 });
+        } catch (err) {
+            return callback (err);
+        }
+        test.on ('ready', function (err) {
+            if (err)
+                return yip.nope (err);
+            yip.yep();
+        });
+        test.on ('error', function (err) {
+            yip.nope (err);
+        });
 
-//     it ('emits "add" events after appearing', function (callback) {
+    });
 
-//     });
+    it ('emits "add" event when the file appears', function (callback) {
 
-//     it ('emits "remove" events after appearing', function (callback) {
+        var yip = new yepnope (function (err) {
+            fs.unlinkSync ('test.txt');
+            try {
+                test.close();
+            } catch (closeErr) {
+                return callback (err || closeErr);
+            }
+            if (err)
+                return callback (err);
+            callback()
+        });
 
-//     });
+        test.on ('change', function (fname) { yip.nope (new Error (
+            'unwanted event change: '+fname
+        )); });
+        test.on ('remove', function (fname) { yip.nope (new Error (
+            'unwanted event remove: '+fname
+        )); });
+        var added = false;
+        test.on ('add', function (fname) {
+            if (fname !== undefined)
+                yip.nope (new Error ('incorrect filename: '+fname));
+            if (added)
+                yip.nope (new Error ('repeat "add" event'));
+            added = true;
+            yip.yep();
+        });
 
-//     it ('emits "change" events after appearing', function (callback) {
+        fs.writeFileSync ('test.txt', 'foo bar baz battle of bands');
 
-//     });
+    });
 
-//     it ('emits "rename" events after appearing', function (callback) {
-
-//     });
-
-// });
-
-// describe ('missing file appears later', function(){
-
-//     it ('emits "change" on file events after appearing', function (callback) {
-
-//     });
-
-//     it ('does not emit "remove" when being removed or renamed', function (callback) {
-
-//     });
-
-// });
-
-// describe ('file or directory disappears and reappears as directory or file', function(){
-
-//     describe ('directory reappears as a file', function(){
-
-//         it ('does not emit an "error" event', function (callback) {
-
-//         });
-
-//         it ('emits "change" events as a file', function (callback) {
-
-//         });
-
-//         it ('does not emit an "remove" event when being removed or renamed as a file', function (callback) {
-
-//         });
-
-//     });
-
-//     describe ('file reappears as a directory', function(){
-
-//         it ('does not emit an "error" event', function (callback) {
-
-//         });
-
-//         it ('emits "add" events as a directory', function (callback) {
-
-//         });
-
-//         it ('emits "remove" events as a directory', function (callback) {
-
-//         });
-
-//         it ('emits "change" events as a directory', function (callback) {
-
-//         });
-
-//         it ('emits "rename" events as a directory', function (callback) {
-
-//         });
-
-//         it ('does not emit an "remove" event when being removed or renamed as a directory', function (callback) {
-
-//         });
-
-//     });
-
-//     it ('survives multiple toggles in each direction', function (callback) {
-
-//     });
-
-// });
+});
