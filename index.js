@@ -5,7 +5,39 @@ var fs = require ('graceful-fs');
 var util = require ('util');
 
 /**     @module/Function surveil
+    Returns a [watcher](:Spy) for a given path and, if it is a directory, watches each file
+    contained. May filter children with regular expression or simple file extension matching.
+@argument/String path
+    The path to a file or directory to watch.
+@argument/:Options options
+    @optional
+    Override default options.
+*/
 
+/**     @submodule/class Options
+    Operating system interface options for an individual filesystem [watcher](:Spy) instance.
+@Number #changeTimeout
+    @default 150
+    The maximum time, in milliseconds, between two operating system "change" events for them to
+    be considered one event and emitted only once.
+@Number #epermRetries
+    @default 5
+    Some operating systems (especially windows) can exhibit intermittent fits of EPERM errors in a
+    variety of odd situations, such as when a node is rapidly linked and unlinked repeatedly. When
+    an EPERM error is encountered, the operation is retried a number of times to help ensure it's
+    not just a temporary problem.
+@Number #epermEasing
+    @default 300
+    When an EPERM error causes a filesystem operation to be retried, the retry is delayed by this
+    timeout, in milliseconds.
+@Number #maxStatsInFlight
+    @default 64
+    Maximum number of calls to [fs.stat]() allowed to be in progress at once.
+@Number #hack_missingPoll
+    @default 1000
+    While a later version will enhance missing-watched-path support by watching an upstream parent
+    for the path to appear, this has not landed yet. For now the missing path is polled using this
+    timeout, in milliseconds.
 */
 
 function mergeOptions (able, baker) {
@@ -29,8 +61,66 @@ module.exports = function (path, options) {
     return new Spy (path, options);
 };
 
-/**     @module/class spy
-
+/**     @module/class Spy
+    Watches a path, whether the path is a file or a directory containing many files. Doesn't care
+    whether the path exists or not, whether it disappears and reappears, etc.
+@argument/String path
+    The path to a file or directory to watch.
+@argument/surveil:Options options
+    @optional
+    Override default options.
+@member/Boolean ready
+    Whether the initial readiness state has been reached. Set `true` after one tick when a file or
+    missing path is targeted. If a directory is found, initial readiness is delayed until watches
+    have been established on the directory's children.
+@member/Boolean exists
+    Whether the watched path currently exists. This value is considered up-to-date during event
+    listener execution.
+@member/Boolean isFile
+    Whether the watched path is currently a file rather than a directory. This value is considered
+    up-to-date during event listener execution.
+*/
+/**     @event ready
+    The initial readiness state has been reached. Emitted after one tick when a file or missing path
+    is targeted. If a directory is found, initial readiness is delayed until watches have been
+    established on the directory's children.
+@argument/Error err
+    If a permissions problem or serious filesystem error prevents watching the target path, the
+    offending Error instance as produced by the [fs]() module is passed to `ready`. An immediate
+    `error` event will follow.
+*/
+/**     @event add
+    A child file has been added to the target directory. Also emitted with no `filename` argument
+    when the target path appears, whether it is a directory or file. You can use the [isFile
+    property](#isFile) if you need to know more about the target path.
+@argument/String filename
+    @optional
+    The local name of the file that was added. When omitted, indicates that the target path itself
+    has appeared.
+*/
+/**     @event remove
+    A child file has been removed from the target directory. Also emitted with no `filename`
+    argument when the target path disappears, whether it was a directory or file.
+@argument/String filename
+    @optional
+    The local name of the file that was removed. When omitted, indicates that the target path itself
+    has disappeared.
+*/
+/**     @event change
+    A child file has been modified within the target directory. This event is batched with a
+    [configurable](surveil:Options#changeTimeout) timeout. When the target path is a file, changes
+    to the target file cause `change` to be emitted with no `filename` argument.
+@argument/String filename
+    @optional
+    The local name of the file that has changed. When omitted, indicates that the target path is a
+    file and it has changed.
+*/
+/**     @event error
+    If the target path suddenly becomes unwatchable due to a permissions issue or serious filesystem
+    error, the offending Error is emitted. When the `ready` event comes with an Error, an `error`
+    event is also emitted immediately after.
+@argument/Error err
+    The underlying Error message, produced by the [fs]() module.
 */
 function Spy (dir, options) {
     EventEmitter.call (this);
@@ -66,6 +156,8 @@ Spy.prototype.update = function (retries) {
     var self = this;
     if (!this.mainWatcher) try {
         this.mainWatcher = fs.watch (this.dir, function (event, filename) {
+            if (self.closed)
+                return;
             if (event == 'rename' || !filename || !Object.hasOwnProperty.call (self.children, filename))
                 self.update();
             if (!self.isFile)
@@ -123,6 +215,8 @@ Spy.prototype.update = function (retries) {
     }
 
     fs.readdir (this.dir, function (err, fnames) {
+        if (self.closed)
+            return;
         if (err) {
             self.isUpdating = false;
             if (err.code == 'ENOENT') {
@@ -294,6 +388,9 @@ Spy.prototype.update = function (retries) {
                         } else
                             self.emit ('child', fname, stats);
                         var newWatcher = self.watches[fname] = fs.watch (fullpath, function (event, eventFname) {
+                            if (self.closed)
+                                return;
+
                             if (event == 'rename') {
                                 self.update();
                                 return;
@@ -351,7 +448,6 @@ Spy.prototype.setupParentWatcher = function(){
     // we're assuming this.dir is missing
     // drill toward root until we find solid ground
 
-
     // TODO write this part properly
     // tempfix just polls
 
@@ -359,6 +455,11 @@ Spy.prototype.setupParentWatcher = function(){
     setTimeout (function(){ self.update(); }, self.options.hack_missingPoll);
 };
 
+
+/**     @member/Function close
+    Terminates all file watching activities and closes the native file watches. No more events will
+    be emitted. This `Spy` cannot be recovered once closed.
+*/
 Spy.prototype.close = function(){
     this.closed = true;
     if (this.mainWatcher) {
