@@ -1,5 +1,7 @@
 surveil
 =======
+[API Documentation](http://shenanigans.github.io/node-surveil/docs/module/surveil/index.html)
+
 Watches a directory for new files and deletions, attempting to delay events until initial file
 creation is complete. Watches files in the directory for changes. Separates events for child files
 and directories. Also watches single files and doesn't require an alternate API to do so. Behaves
@@ -41,6 +43,8 @@ Coming soon - run tests against your custom timeout settings.
 
 Usage
 -----
+[API Documentation](http://shenanigans.github.io/node-surveil/docs/module/surveil/index.html)
+
 ```javascript
 var path = require ('path');
 var surveil = require ('surveil');
