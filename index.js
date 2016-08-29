@@ -38,6 +38,16 @@ var util = require ('util');
     While a later version will enhance missing-watched-path support by watching an upstream parent
     for the path to appear, this has not landed yet. For now the missing path is polled using this
     timeout, in milliseconds.
+@Array<String> #extensions
+    @default undefined
+    Only watch and emit events for child files with names ending in one of the provided Strings. If
+    a String represents a file extension that must start with a period, the String should start with
+    a period, e.g. `".pdf"`. Watches and events for the watched path and all child directories are
+    not affected by filename filters.
+@Array<RegExp> #patterns
+    Only accept files with names matching at least one of any number of regular expressions. Does
+    not apply when `extensions` is set. Watches and events for the watched path and all child
+    directories are not affected by filename filters.
 */
 
 function mergeOptions (able, baker) {
@@ -129,10 +139,10 @@ function Spy (dir, options) {
     if (options)
         mergeOptions (options, opts);
     this.options = opts;
-    this.watches = {};
-    this.timeouts = {};
-    this.children = {};
-    this.subdirs = {};
+    this.watches = Object.create (null);
+    this.timeouts = Object.create (null);
+    this.children = Object.create (null);
+    this.subdirs = Object.create (null);
     this.renameCandidates = [];
     this.ready = false;
     this.exists = false;
@@ -258,6 +268,8 @@ Spy.prototype.update = function (retries) {
         }
 
         self.isFile = false;
+        if (!self.ready)
+            self.emit ('list', fnames);
         if (self.ready && !self.exists)
             self.emit ('add');
         var added;

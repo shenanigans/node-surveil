@@ -1,17 +1,17 @@
 {
   "name": "surveil",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
-  "description": "Really simple cross-platform directory and file watcher.",
   "author": "Kevin \"Schmidty\" Smith <shenanigans@kaztl.com>",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/shenanigans/node-surveil"
-  },
+  "description": "Really simple cross-platform directory and file watcher.",
   "keywords": [
     "file", "directory", "fs", "watch", "watcher"
   ],
   "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shenanigans/node-surveil"
+  },
   "scripts": {
     "test": "./node_modules/.bin/mocha test.js"
   },

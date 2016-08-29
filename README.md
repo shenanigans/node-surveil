@@ -6,9 +6,9 @@ and directories. Also watches single files and doesn't require an alternate API 
 gracefully when the watched path does not exist yet, emitting `add` with no filename when it
 appears.
 
-Shares `stat` calls gathered during early setup so you don't have to duplicate any work `surveil` is
-already doing. This sort of efficiency trick can pay big dividends when querying against spinning
-rust.
+Shares `stat` calls gathered during early setup so you don't have to duplicate any of the work
+`surveil` is already doing. This sort of efficiency trick can pay big dividends when querying
+against spinning rust.
 
 
 Why
@@ -19,8 +19,8 @@ containing lots of files. On source examination I found a lot of use of `fs.stat
 at the time. Surveil is **much** more performant in adverse conditions. While most watcher libs are
 designed to support task runners and other applications that can take their time starting up,
 surveil **never** assumes the caller doesn't care how long something blocks. Finally, because
-surveil was designed on windows and later tested for *nix it boasts (I am boasting, aren't I?)
-superior cross-platform reliability.
+surveil was designed on windows and later tested for *nix it boasts superior cross-platform
+reliability.
 
 
 Installation
@@ -41,6 +41,9 @@ Coming soon - run tests against your custom timeout settings.
 
 Usage
 -----
+If the target path does not exist yet, you will receive an `add` event with no `filename` argument
+each time it appears. `surveil` will then gracefully watch the path whenever it exists.
+
 ```javascript
 var path = require ('path');
 var surveil = require ('surveil');
@@ -99,8 +102,7 @@ var subjectDir = surveil (
   }
 );
 
-subjectDir.on ('ready', function (spy, err) {
-  // spy === subjectDir
+subjectDir.on ('ready', function (err) {
   // if present, the `err` argument will also
   // trigger an `error` event
 });
@@ -121,6 +123,8 @@ subjectDir.on ('add', function (filename, stats) {
   // a new file has been added and the initial
   // content write operation appears to have
   // concluded.
+  // if no arguments are provided, the watched path
+  // was missing and has appeared.
   // If filename filters are present, filename will
   // conform to them.
 });
@@ -132,17 +136,18 @@ subjectDir.on ('addDir', function (dirname, stats) {
 
 subjectDir.on ('remove', function (filename) {
   // a file has been removed.
+  // If no filename argument is provided, the watched
+  // path has disappeared.
 });
 
 subjectDir.on ('change', function (filename) {
   // a file change event or rapid group of
   // such events has just occured.
-  // no new stat call is made, therefor none is shared
+  // no new stat call is made, therefor none is shared.
+  // If the watched path is a file, no filename
+  // argument is provided.
 });
 ```
-
-If the provided path does not exist yet, you will receive an `add` event with no `filename` argument
-each time it appears. `surveil` will then gracefully watch the path whenever it exists.
 
 
 LICENSE
