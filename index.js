@@ -268,8 +268,6 @@ Spy.prototype.update = function (retries) {
         }
 
         self.isFile = false;
-        if (!self.ready)
-            self.emit ('list', fnames);
         if (self.ready && !self.exists)
             self.emit ('add');
         var added;
@@ -348,6 +346,7 @@ Spy.prototype.update = function (retries) {
             if (self.closed)
                 return;
             var fname = added[fileI];
+            var position = fileI;
             var fullpath = path.join (self.dir, fname);
 
             fs.stat (fullpath, function (err, stats) {
@@ -366,7 +365,7 @@ Spy.prototype.update = function (retries) {
                     if (self.ready)
                         self.emit ('addDir', fname, stats);
                     else
-                        self.emit ('childDir', fname, stats);
+                        self.emit ('childDir', fname, stats, position / fileJ);
                     self.subdirs[fname] = true;
                 } else if (stats) try {
                     var skip = true;
@@ -398,7 +397,7 @@ Spy.prototype.update = function (retries) {
                                 emitAddEvent
                             ];
                         } else
-                            self.emit ('child', fname, stats);
+                            self.emit ('child', fname, stats, position / fileJ);
                         var newWatcher = self.watches[fname] = fs.watch (fullpath, function (event, eventFname) {
                             if (self.closed)
                                 return;
