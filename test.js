@@ -3,7 +3,7 @@ var fs = require ('graceful-fs');
 var path = require ('path');
 var surveil = require ('./index');
 
-var YEPNOPE_TIMEOUT = 100;
+var YEPNOPE_TIMEOUT = 700;
 function yepnope (callback) {
     this.callback = callback;
 }
@@ -22,6 +22,14 @@ yepnope.prototype.nope = function (err) {
     clearTimeout (this.timeout);
     this.callback (err || new Error ('nope'));
     this.callback = undefined;
+};
+yepnope.prototype.maybe = function(){
+    if (!this.callback)
+        return;
+    if (!this.timeout)
+        return;
+    clearTimeout (this.timeout);
+    this.yep();
 };
 
 try {
@@ -176,30 +184,27 @@ describe ('existing directory', function(){
         test.on ('ready', function (err) {
             if (err)
                 return yip.nope (err);
-            stream = fs.createWriteStream ('test/foo.txt', function (err, stream) {
-                if (err)
-                    return yip.nope (err);
-
-                var blocks = [
-                    'double',
-                    'triple',
-                    'quadruple',
-                    'quintuple',
-                    'sextuple',
-                    'septuple',
-                    'octuple'
-                ];
-                function writeToStream(){
-                    var data = blocks.shift();
-                    if (!data)
-                        return;
-                    for (var i=5; i; i--)
-                        data += data;
-                    stream.write (data);
-                    setTimeout (writeToStream, 30);
-                }
-                writeToStream();
-            });
+            stream = fs.createWriteStream ('test/foo.txt');
+            var blocks = [
+                'double',
+                'triple',
+                'quadruple',
+                'quintuple',
+                'sextuple',
+                'septuple',
+                'octuple'
+            ];
+            function writeToStream(){
+                var data = blocks.shift();
+                if (!data)
+                    return;
+                yip.maybe();
+                for (var i=16; i; i--)
+                    data += data;
+                stream.write (data);
+                setTimeout (writeToStream, 30);
+            }
+            writeToStream();
         });
 
     });
@@ -243,30 +248,26 @@ describe ('existing directory', function(){
         test.on ('ready', function (err) {
             if (err)
                 return yip.nope (err);
-            stream = fs.createWriteStream ('test/bar.txt', function (err, stream) {
-                if (err)
-                    return yip.nope (err);
-
-                var blocks = [
-                    'double',
-                    'triple',
-                    'quadruple',
-                    'quintuple',
-                    'sextuple',
-                    'septuple',
-                    'octuple'
-                ];
-                function writeToStream(){
-                    var data = blocks.shift();
-                    if (!data)
-                        return;
-                    for (var i=5; i; i--)
-                        data += data;
-                    stream.write (data);
-                    setTimeout (writeToStream, 30);
-                }
-                writeToStream();
-            });
+            stream = fs.createWriteStream ('test/bar.txt');
+            var blocks = [
+                'double',
+                'triple',
+                'quadruple',
+                'quintuple',
+                'sextuple',
+                'septuple',
+                'octuple'
+            ];
+            function writeToStream(){
+                var data = blocks.shift();
+                if (!data)
+                    return;
+                for (var i=5; i; i--)
+                    data += data;
+                stream.write (data);
+                setTimeout (writeToStream, 30);
+            }
+            writeToStream();
         });
 
     });
@@ -294,9 +295,12 @@ describe ('existing directory', function(){
 
         var added = false;
         var changed = false;
+        var written = false;
         test.on ('change', function (fname) {
             if (fname != 'foo.txt')
                 return yip.nope (new Error ('incorrect filename: '+fname));
+            if (!written)
+                return yip.nope (new Error ('emitted change before any change occured'));
             if (changed)
                 return yip.nope (new Error ('repeat event "change": '+fname));
             if (!added)
@@ -314,10 +318,9 @@ describe ('existing directory', function(){
                     'unwanted event "add": '+fname
                 ));
             added = true;
-            stream = fs.createWriteStream ('test/foo.txt', function (err, stream) {
-                if (err)
-                    return yip.nope (err);
 
+            setTimeout (function(){
+                stream = fs.createWriteStream ('test/foo.txt');
                 var blocks = [
                     'double',
                     'triple',
@@ -333,12 +336,12 @@ describe ('existing directory', function(){
                         return;
                     for (var i=5; i; i--)
                         data += data;
+                    written = true;
                     stream.write (data);
                     setTimeout (writeToStream, 30);
                 }
-
-                setTimeout (writeToStream, 300);
-            });
+                writeToStream();
+            }, 100);
         });
         test.on ('remove', function (fname) { yip.nope (new Error (
             'unwanted event remove: '+fname
@@ -632,7 +635,12 @@ describe ('existing directory', function(){
 
     it ('ignores filename filters for the "childDir" event', function (callback) {
 
-        fs.mkdirSync ('test/foodir');
+        try {
+            fs.mkdirSync ('test/foodir');
+        } catch (err) {
+            if (err.code !== 'EEXIST')
+                throw err;
+        }
 
         try {
             var test = surveil ('test', { extensions:[ '.txt', '.xml' ] });
@@ -855,30 +863,26 @@ describe ('existing file', function(){
         test.on ('ready', function (err) {
             if (err)
                 return yip.nope (err);
-            writeStream = fs.createWriteStream ('test.txt', function (err, stream) {
-                if (err)
-                    return yip.nope (err);
-
-                var blocks = [
-                    'double',
-                    'triple',
-                    'quadruple',
-                    'quintuple',
-                    'sextuple',
-                    'septuple',
-                    'octuple'
-                ];
-                function writeToStream(){
-                    var data = blocks.shift();
-                    if (!data)
-                        return;
-                    for (var i=5; i; i--)
-                        data += data;
-                    stream.write (data);
-                    setTimeout (writeToStream, 30);
-                }
-                writeToStream();
-            });
+            writeStream = fs.createWriteStream ('test.txt');
+            var blocks = [
+                'double',
+                'triple',
+                'quadruple',
+                'quintuple',
+                'sextuple',
+                'septuple',
+                'octuple'
+            ];
+            function writeToStream(){
+                var data = blocks.shift();
+                if (!data)
+                    return;
+                for (var i=5; i; i--)
+                    data += data;
+                writeStream.write (data);
+                setTimeout (writeToStream, 30);
+            }
+            writeToStream();
         });
 
     });
@@ -911,11 +915,16 @@ describe ('existing file', function(){
             test.on ('add', function (fname) { yip.nope (new Error (
                 'unwanted event add: '+fname
             )); });
+
+            var removed = false;
             test.on ('remove', function (fname) {
+                removed = true;
                 yip.yep();
             });
 
             setTimeout (function(){
+                if (removed)
+                    return;
                 yip.nope (new Error ('did not fire "remove" event'));
             }, 500);
 
@@ -947,7 +956,10 @@ describe ('existing file', function(){
             test.on ('change', function (fname) { yip.nope (new Error (
                 'unwanted event change: '+fname
             )); });
+
+            var added = false;
             test.on ('add', function (fname) {
+                added = true;
                 yip.yep();
             });
             test.on ('remove', function (fname) { yip.nope (new Error (
@@ -961,6 +973,8 @@ describe ('existing file', function(){
             }
 
             setTimeout (function(){
+                if (added)
+                    return;
                 yip.nope (new Error ('did not fire "add" event'));
             }, 500);
 

@@ -4,17 +4,18 @@ var path = require ('path');
 var fs = require ('graceful-fs');
 var util = require ('util');
 
-/**     @module/Function surveil
-    Returns a [watcher](:Spy) for a given path and, if it is a directory, watches each file
+/*      @module:Function surveil
+    Returns a [watcher](/Spy) for a given path and, if it is a directory, watches each file
     contained. May filter children with regular expression or simple file extension matching.
-@argument/String path
+@argument:String path
     The path to a file or directory to watch.
-@argument/:Options options
+@argument:/Options options
     @optional
     Override default options.
+@returns:/Spy watcher
 */
 
-/**     @submodule/class Options
+/*      @submodule:class Options
     Operating system interface options for an individual filesystem [watcher](:Spy) instance.
 @Number #changeTimeout
     @default 150
@@ -60,76 +61,77 @@ function mergeOptions (able, baker) {
 }
 
 var DEFAULT_OPTIONS = {
-    changeTimeout:          150,
-    epermRetries:           5,
-    maxStatsInFlight:       64,
-    epermEasing:            300,
-    hack_missingPoll:       1000
+    changeTimeout:      150,
+    epermRetries:       5,
+    maxStatsInFlight:   64,
+    epermEasing:        300,
+    hack_missingPoll:   1000,
+    recursive:          false
 };
 
 module.exports = function (path, options) {
     return new Spy (path, options);
 };
 
-/**     @module/class Spy
+/*      @module:class Spy
     Watches a path, whether the path is a file or a directory containing many files. Doesn't care
     whether the path exists or not, whether it disappears and reappears, etc.
-@argument/String path
+@argument:String path
     The path to a file or directory to watch.
-@argument/surveil:Options options
+@argument:surveil/Options options
     @optional
     Override default options.
-@member/Boolean ready
+@member:Boolean ready
     Whether the initial readiness state has been reached. Set `true` after one tick when a file or
     missing path is targeted. If a directory is found, initial readiness is delayed until watches
     have been established on the directory's children.
-@member/Boolean exists
+@member:Boolean exists
     Whether the watched path currently exists. This value is considered up-to-date during event
     listener execution.
-@member/Boolean isFile
+@member:Boolean isFile
     Whether the watched path is currently a file rather than a directory. This value is considered
     up-to-date during event listener execution.
 */
-/**     @event ready
+/*      @event ready
     The initial readiness state has been reached. Emitted after one tick when a file or missing path
     is targeted. If a directory is found, initial readiness is delayed until watches have been
     established on the directory's children.
-@argument/Error err
+@argument:Error err
     If a permissions problem or serious filesystem error prevents watching the target path, the
     offending Error instance as produced by the [fs]() module is passed to `ready`. An immediate
     `error` event will follow.
 */
-/**     @event add
+/*      @event add
     A child file has been added to the target directory. Also emitted with no `filename` argument
     when the target path appears, whether it is a directory or file. You can use the [isFile
     property](#isFile) if you need to know more about the target path.
-@argument/String filename
+@argument:String filename
     @optional
     The local name of the file that was added. When omitted, indicates that the target path itself
     has appeared.
 */
-/**     @event remove
+/*      @event remove
     A child file has been removed from the target directory. Also emitted with no `filename`
     argument when the target path disappears, whether it was a directory or file.
-@argument/String filename
+@argument:String filename
     @optional
     The local name of the file that was removed. When omitted, indicates that the target path itself
     has disappeared.
 */
-/**     @event change
+/*      @event change
     A child file has been modified within the target directory. This event is batched with a
     [configurable](surveil:Options#changeTimeout) timeout. When the target path is a file, changes
     to the target file cause `change` to be emitted with no `filename` argument.
-@argument/String filename
+@argument:String filename
     @optional
     The local name of the file that has changed. When omitted, indicates that the target path is a
     file and it has changed.
 */
-/**     @event error
+/*      @event error
     If the target path suddenly becomes unwatchable due to a permissions issue or serious filesystem
     error, the offending Error is emitted. When the `ready` event comes with an Error, an `error`
     event is also emitted immediately after.
-@argument/Error err
+@argument:Error err
     The underlying Error message, produced by the [fs]() module.
 */
 function Spy (dir, options) {
@@ -145,12 +147,88 @@ function Spy (dir, options) {
     this.subdirs = Object.create (null);
     this.renameCandidates = [];
     this.ready = false;
+    this.watchedDirs = 1;
     this.exists = false;
     this.isFile = false;
-
     var self = this;
     process.nextTick (function(){
         self.update();
+    });
+
+    if (!opts.recursive)
+        return;
+
+    var subOptions = {};
+    for (var key in opts)
+        subOptions[key] = opts[key];
+    subOptions.recursive = false;
+
+    this.spies = {};
+    var ignoreDir = false;
+    function emitSafe(){
+        ignoreDir = true;
+        self.emit.apply (self, arguments);
+        ignoreDir = false;
+    }
+    function watchDir (dirname) {
+        if (ignoreDir)
+            return;
+        if (self.watchedDirs)
+            self.watchedDirs++;
+        var dirSpy = new Spy (path.resolve (dir, dirname), subOptions);
+        if (self.spies[dirname])
+            self.spies[dirname].close();
+        self.spies[dirname] = dirSpy;
+
+        function makeRecurse (eventName) {
+            return function (name, stats, prog) {
+                if (ignoreDir)
+                    return;
+                var fullpath = path.join (dirname, name);
+                watchDir (fullpath);
+                if (prog)
+                    emitSafe (eventName, name, stats, prog);
+                else if (stats)
+                    emitSafe (eventName, name, stats);
+                else
+                    emitSafe (eventName, name);
+            };
+        }
+        dirSpy.on ('childDir', makeRecurse ('childDir'));
+        dirSpy.on ('addDir', makeRecurse ('addDir'));
+        dirSpy.on ('removeDir', function (name) {
+
+        });
+        function makeRepeater (eventName) {
+            return function (name, stats, prog) {
+                var fullname = name !== undefined ? path.join (dirname, name) : dirname;
+                if (prog)
+                    emitSafe (eventName, fullname, stats, prog);
+                else if (stats)
+                    emitSafe (eventName, fullname, stats);
+                else
+                    emitSafe (eventName, fullname);
+            }
+        }
+        dirSpy.on ('child', makeRepeater ('child'));
+        dirSpy.on ('add', makeRepeater ('add'));
+        dirSpy.on ('change', makeRepeater ('change'));
+        dirSpy.on ('remove', makeRepeater ('remove'));
+        dirSpy.on ('ready', function(){
+            if (!--self.watchedDirs)
+                self.emit ('ready');
+        });
+        dirSpy.on ('close', function(){
+            if (self.spies[dirname] === dirSpy)
+                delete self.spies[dirname];
+        });
+    }
+    this.on ('childDir', watchDir);
+    this.on ('addDir', watchDir);
+    this.on ('removeDir', function (name) {
+        if (ignoreDir || !self.spies[name])
+            return;
+        self.spies[name].close();
     });
 }
 util.inherits (Spy, EventEmitter);
@@ -174,6 +252,7 @@ Spy.prototype.update = function (retries) {
                 return;
             if (event == 'rename')
                 return;
+            // change event
             // when the main target is a file, emit change events as a file
             if (Object.hasOwnProperty.call (self.timeouts, '')) {
                 var oldJob = self.timeouts[''];
@@ -211,7 +290,8 @@ Spy.prototype.update = function (retries) {
         this.setupParentWatcher();
         if (!this.ready) {
             this.ready = true;
-            this.emit ('ready');
+            if (!--this.watchedDirs)
+                this.emit ('ready');
         }
         if (this.exists) {
             this.emit ('remove');
@@ -253,12 +333,14 @@ Spy.prototype.update = function (retries) {
                 self.exists = false;
                 if (!self.ready) {
                     self.ready = true;
-                    self.emit ('ready', err);
+                    if (!--self.watchedDirs)
+                        self.emit ('ready', err);
                 }
             }
             if (!self.ready) {
                 self.ready = true;
-                self.emit ('ready');
+                if (!--self.watchedDirs)
+                    self.emit ('ready');
             }
             if (self.doUpdateAgain) {
                 self.doUpdateAgain = false;
@@ -330,7 +412,8 @@ Spy.prototype.update = function (retries) {
         if (!added.length) {
             if (!self.ready) {
                 self.ready = true;
-                self.emit ('ready');
+                if (!--self.watchedDirs)
+                    self.emit ('ready');
             }
             self.isUpdating = false;
             if (self.doUpdateAgain) {
@@ -444,7 +527,8 @@ Spy.prototype.update = function (retries) {
                 self.isUpdating = false;
                 if (!self.ready) {
                     self.ready = true;
-                    self.emit ('ready');
+                    if (!--self.watchedDirs)
+                        self.emit ('ready');
                 }
                 if (self.doUpdateAgain) {
                     self.doUpdateAgain = false;
@@ -467,7 +551,7 @@ Spy.prototype.setupParentWatcher = function(){
 };
 
 
-/**     @member/Function close
+/*      @member:Function close
     Terminates all file watching activities and closes the native file watches. No more events will
     be emitted. This `Spy` cannot be recovered once closed.
 */
@@ -484,4 +568,5 @@ Spy.prototype.close = function(){
     for (var key in this.watches)
         this.watches[key].close();
     this.watches = {};
+    this.emit ('close');
 };

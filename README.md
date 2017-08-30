@@ -38,8 +38,6 @@ Running Tests
 $ npm test
 ```
 
-Coming soon - run tests against your custom timeout settings.
-
 
 Usage
 -----
@@ -59,20 +57,20 @@ var subjectDir = surveil (
       minimum latency to `change` events
       being fired. (in milliseconds)
     */
-    changeTimeout:          150,
+    changeTimeout:    150,
     /*
       Number of times to retry establishing
       a file watch when receiving the
       `EPERM` event from the filesystem.
     */
-    epermRetries:           5,
+    epermRetries:     5,
     /*
       Proper support for missing path
       features hasn't landed yet. For now a
       simple poll timeout is used to test
       the surveil'd path. (in milliseconds)
     */
-    hack_missingPoll:       1000,
+    hack_missingPoll: 1000,
     /*
       Only accept files with names ending
       in one of the provided extensions.
@@ -81,7 +79,7 @@ var subjectDir = surveil (
       affected by filename filters.
       Default: undefined
     */
-    extensions:             [
+    extensions:       [
       ".jpg",
       ".jpeg",
       ".png",
@@ -96,11 +94,18 @@ var subjectDir = surveil (
       filename filters.
       Default: undefined
     */
-    patterns:               [
+    patterns:         [
       /report/,
       /sallary/,
       /\.xls$/
-    ]
+    ],
+    /*
+      EXPERIMENTAL FEATURE (NO TESTS)
+      Watches a directory recursively
+      and emits normal events with local
+      paths.
+    */
+    recursive:        true
   }
 );
 
@@ -125,7 +130,7 @@ subjectDir.on ('add', function (filename, stats) {
   // a new file has been added and the initial
   // content write operation appears to have
   // concluded.
-  // if no arguments are provided, the watched path
+  // if no arguments are passed, the watched path
   // was missing and has appeared.
   // If filename filters are present, filename will
   // conform to them.
@@ -138,7 +143,7 @@ subjectDir.on ('addDir', function (dirname, stats) {
 
 subjectDir.on ('remove', function (filename) {
   // a file has been removed.
-  // If no filename argument is provided, the watched
+  // If no filename argument is passed, the watched
   // path has disappeared.
 });
 
@@ -147,7 +152,7 @@ subjectDir.on ('change', function (filename) {
   // such events has just occured.
   // no new stat call is made, therefor none is shared.
   // If the watched path is a file, no filename
-  // argument is provided.
+  // argument is passed.
 });
 ```
 
@@ -156,7 +161,7 @@ LICENSE
 -------
 The MIT License (MIT)
 
-Copyright (c) 2015 Kevin "Schmidty" Smith
+Copyright (c) 2017 Kevin "Schmidty" Smith
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

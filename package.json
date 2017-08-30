@@ -1,11 +1,15 @@
 {
   "name": "surveil",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "license": "MIT",
   "author": "Kevin \"Schmidty\" Smith <shenanigans@kaztl.com>",
   "description": "Really simple cross-platform directory and file watcher.",
   "keywords": [
-    "file", "directory", "fs", "watch", "watcher"
+    "file",
+    "directory",
+    "fs",
+    "watch",
+    "watcher"
   ],
   "main": "index.js",
   "repository": {
@@ -19,6 +23,6 @@
     "mocha": "^2.3.3"
   },
   "dependencies": {
-    "graceful-fs": "^4.1.2"
+    "graceful-fs": "^4.1.11"
   }
 }
